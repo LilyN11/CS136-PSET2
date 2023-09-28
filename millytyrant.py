@@ -18,6 +18,12 @@ class MillyTyrant(Peer):
     def post_init(self):
         print(("post_init(): %s here!" % self.id))
         self.optimistic = "None"
+        self.alpha = 0.2
+        self.gamma = 0.1
+        self.r = 3
+        self.d = None
+        self.u = None
+        self.uploaders = []
     
     def requests(self, peers, history):
         """
@@ -113,15 +119,36 @@ class MillyTyrant(Peer):
 
         In each round, this will be called after requests().
         """
-        m = 4
-
         round = history.current_round()
+        num_peers = len(peers)
+
         logging.debug("%s again.  It's round %d." % (
             self.id, round))
         # One could look at other stuff in the history too here.
         # For example, history.downloads[round-1] (if round != 0, of course)
         # has a list of Download objects for each Download to this peer in
         # the previous round.
+
+        if round == 0:
+            self.d = {p.id : 1 for p in peers}
+            self.u = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
+        else:
+            we_unblocked = list(np.unique([upload.to_id for upload in history.uploads[history.last_round()]]))
+            unblocked_us = list(np.unique([download.from_id for download in history.downloads[history.last_round()]]))
+
+            self.uploaders.append(unblocked_us)
+
+            for peer in peers:
+                if peer.id in we_unblocked and peer.id not in unblocked_us:
+                    self.u[peer.id] = min(self.u[peer.id]*(1+self.alpha), self.up_bw)
+                elif round >= self.r:
+                    unblocked = True
+                    for i in range(self.r):
+                        if peer.id not in self.uploaders[-(i+1)]:
+                            unblocked = False
+                            break
+                    if unblocked:
+                        self.u[peer.id] *= (1-self.gamma)
 
         if len(requests) == 0:
             logging.debug("No one wants my pieces!")
@@ -132,28 +159,43 @@ class MillyTyrant(Peer):
 
             interested = list(np.unique([request.requester_id for request in requests]))
 
-            generosity = {peer.id : 0 for peer in peers}
-            hist = []
-            if round > 0:
-                hist += history.downloads[round-1]
-            if round > 1:
-                hist += history.downloads[round-2]
-            for download in hist:
-                if download.to_id == self.id:
-                    generosity[download.from_id] += download.blocks
+            ratios = {p.id : self.d[p.id] / self.u[p.id] for p in peers}
 
-            chosen = sorted(interested, key = lambda peer: generosity[peer], reverse=True)[:m-1]
+            ranking = sorted(interested, key = lambda p : ratios[p], reverse=True)
 
-            if round % 3 == 0:
-                unchosen = [peer for peer in interested if peer not in chosen]
-                if len(unchosen) > 0:
-                    chosen.append(random.choice(unchosen))
-                    self.optimistic = chosen[-1]
-            else:
-                chosen.append(self.optimistic)
+            bws = []
+            chosen = []
+
+            while sum(bws) < self.up_bw and len(ranking) > 0:
+                id = ranking.pop(0)
+                chosen.append(id)
+                bws.append(self.u[id])
+
+            if len(chosen) > 0:
+                chosen.pop()
+                bws.pop()
+            # generosity = {peer.id : 0 for peer in peers}
+            # hist = []
+            # if round > 0:
+            #     hist += history.downloads[round-1]
+            # if round > 1:
+            #     hist += history.downloads[round-2]
+            # for download in hist:
+            #     if download.to_id == self.id:
+            #         generosity[download.from_id] += download.blocks
+
+            # chosen = sorted(interested, key = lambda peer: generosity[peer], reverse=True)[:m-1]
+
+            # if round % 3 == 0:
+            #     unchosen = [peer for peer in interested if peer not in chosen]
+            #     if len(unchosen) > 0:
+            #         chosen.append(random.choice(unchosen))
+            #         self.optimistic = chosen[-1]
+            # else:
+            #     chosen.append(self.optimistic)
 
             # Evenly "split" my upload bandwidth among the one chosen requester
-            bws = even_split(self.up_bw, len(chosen))
+            # bws = even_split(self.up_bw, len(chosen))
 
         # create actual uploads out of the list of peer ids and bandwidths
         uploads = [Upload(self.id, peer_id, bw)

@@ -143,13 +143,14 @@ class MillyStd(Peer):
                     generosity[download.from_id] += download.blocks
 
             chosen = sorted(interested, key = lambda peer: generosity[peer], reverse=True)[:m-1]
+            unchosen = [peer for peer in interested if peer not in chosen]
 
             if round % 3 == 0:
                 unchosen = [peer for peer in interested if peer not in chosen]
                 if len(unchosen) > 0:
-                    chosen.append(random.choice(unchosen))
-                    self.optimistic = chosen[-1]
-            else:
+                    self.optimistic = random.choice(unchosen)
+            
+            if self.optimistic not in chosen:
                 chosen.append(self.optimistic)
 
             # Evenly "split" my upload bandwidth among the one chosen requester
