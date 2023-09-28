@@ -8,6 +8,7 @@
 
 import random
 import logging
+import numpy as np
 
 from messages import Upload, Request
 from util import even_split
@@ -122,8 +123,9 @@ class MillyStd(Peer):
 
             if round % 3 == 0:
                 unchosen = [peer for peer in interested if peer not in chosen]
-                chosen.append(random.choice(unchosen))
-                self.optimistic = chosen[-1]
+                if len(unchosen) > 0:
+                    chosen.append(random.choice(unchosen))
+                    self.optimistic = chosen[-1]
             else:
                 chosen.append(self.optimistic)
 
