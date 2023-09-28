@@ -18,7 +18,6 @@ class MillyTyrant(Peer):
     def post_init(self):
         print(("post_init(): %s here!" % self.id))
         self.optimistic = "None"
-        self.j = None
     
     def requests(self, peers, history):
         """
@@ -55,13 +54,28 @@ class MillyTyrant(Peer):
             if bool(intersect):
                 count_pieces[np.array(list(intersect))] +=1
 
-        needed_pieces.sort(key=lambda piece: count_pieces[piece])
-        
+        needed_pieces.sort(key=lambda piece: int(count_pieces[piece]))
+
         # Sort peers by id.  This is probably not a useful sort, but other 
         # sorts might be useful
-        peers.sort(key=lambda p: len(p.available_pieces))
+        if len(history.uploads) == 0:
+            unblocked = []
+        else:
+            unblocked = list(np.unique([upload.to_id for upload in history.uploads[history.last_round()]]))
+
+        def rank(p):
+            if p.id in unblocked:
+                return self.conf.num_pieces + len(p.available_pieces)
+            else:
+                return len(p.available_pieces)
+
+        peers.sort(key=rank, reverse=True)
+        
         # request all available pieces from all peers!
         # (up to self.max_requests from each)
+
+        early = (sum(self.pieces) < self.conf.blocks_per_piece)
+
         for peer in peers:
             av_set = set(peer.available_pieces)
             isect = av_set.intersection(np_set)
@@ -69,13 +83,23 @@ class MillyTyrant(Peer):
             # More symmetry breaking -- ask for random pieces.
             # This would be the place to try fancier piece-requesting strategies
             # to avoid getting the same thing from multiple peers at a time.
-            for piece_id in sorted(isect, key=lambda piece: needed_pieces.index(piece))[:n]:
+            if isect is None:
+                pass
+            elif early and peer not in unblocked:
+                piece_choices = random.sample(sorted(isect), n)
+            else:
+                piece_choices = sorted(isect, key=lambda piece: needed_pieces.index(piece))[:n]
+
+            for piece_id in piece_choices:
                 # aha! The peer has this piece! Request it.
                 # which part of the piece do we need next?
                 # (must get the next-needed blocks in order)
                 start_block = self.pieces[piece_id]
                 r = Request(self.id, peer.id, piece_id, start_block)
                 requests.append(r)
+
+                needed_pieces.remove(piece_id)
+                needed_pieces.append(piece_id)
 
         return requests
 
@@ -136,3 +160,4 @@ class MillyTyrant(Peer):
                    for (peer_id, bw) in zip(chosen, bws)]
             
         return uploads
+
