@@ -130,7 +130,7 @@ class MillyTyrant(Peer):
         # the previous round.
 
         if round == 0:
-            self.d = {p.id : 1 for p in peers}
+            self.d = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/3. for p in peers}
             self.u = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
         else:
             we_unblocked = list(np.unique([upload.to_id for upload in history.uploads[history.last_round()]]))
@@ -138,7 +138,14 @@ class MillyTyrant(Peer):
 
             self.uploaders.append(unblocked_us)
 
+            generosity = {peer.id : 0 for peer in peers}
+            for download in history.downloads[round-1]:
+                generosity[download.from_id] += download.blocks
+
             for peer in peers:
+                if peer.id in unblocked_us:
+                    self.d[peer.id] = generosity[peer.id]
+
                 if peer.id in we_unblocked and peer.id not in unblocked_us:
                     self.u[peer.id] = min(self.u[peer.id]*(1+self.alpha), self.up_bw)
                 elif round >= self.r:
