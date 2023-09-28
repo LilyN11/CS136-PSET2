@@ -104,11 +104,17 @@ class MillyStd(Peer):
 
         #ADDED CALC DOWNLOAD RATE
         def calc_download(peer_id):
-            if peer_id not in self.download_rates:
+            if peer_id not in self.download_rates or not self.download_rates[peer_id]:
                 return 0
             return sum(self.download_rates[peer_id]) / len(self.download_rates[peer_id])
 
-        interested_peers = [r.requester_id for r in requests].sort(key=calc_download, reverse=True)
+        interested_peers = [r.requester_id for r in requests].sort(key=calc_download, reverse=True)[:3]
+        blocked_peers = [r.requester_id for r in requests if calc_download(r.requester_id) = 0]
+        
+        if round % 3 == 0:
+            if blocked_peers:
+                unblock_random = random.choice(blocked_peers)
+                interested_peers.append(unblock_random)
 
         if len(requests) == 0:
             logging.debug("No one wants my pieces!")
@@ -116,7 +122,7 @@ class MillyStd(Peer):
             bws = []
         else:
             #ADDED allocate bandwith among top requesters
-            bws = even_split(self.up_bw, len(interested_peers)) 
+            bws = even_split(self.up_bw, len(4)) 
         if bws is None:
             bws = []
         if interested_peers is None:
@@ -126,5 +132,5 @@ class MillyStd(Peer):
         # create actual uploads out of the list of requester ids and bandwidths
         uploads = [Upload(self.id, requester_id, bw)
                    for (requester_id, bw) in zip(interested_peers, bws)]
-            
+        print(uploads)    
         return uploads
