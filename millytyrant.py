@@ -6,6 +6,7 @@
 # You'll want to copy this file to AgentNameXXX.py for various versions of XXX,
 # probably get rid of the silly logging messages, and then add more logic.
 
+import numpy as np
 import random
 import logging
 
@@ -13,11 +14,11 @@ from messages import Upload, Request
 from util import even_split
 from peer import Peer
 
-class Dummy(Peer):
+class MillyTyrant(Peer):
     def post_init(self):
         print(("post_init(): %s here!" % self.id))
-        self.dummy_state = dict()
-        self.dummy_state["cake"] = "lie"
+        self.optimistic = "None"
+        self.j = None
     
     def requests(self, peers, history):
         """
@@ -47,10 +48,18 @@ class Dummy(Peer):
         requests = []   # We'll put all the things we want here
         # Symmetry breaking is good...
         random.shuffle(needed_pieces)
+
+        count_pieces = np.zeros(self.conf.num_pieces)
+        for peer in peers:
+            intersect = np_set.intersection(peer.available_pieces)
+            if bool(intersect):
+                count_pieces[np.array(list(intersect))] +=1
+
+        needed_pieces.sort(key=lambda piece: count_pieces[piece])
         
         # Sort peers by id.  This is probably not a useful sort, but other 
         # sorts might be useful
-        peers.sort(key=lambda p: p.id)
+        peers.sort(key=lambda p: len(p.available_pieces))
         # request all available pieces from all peers!
         # (up to self.max_requests from each)
         for peer in peers:
@@ -60,7 +69,7 @@ class Dummy(Peer):
             # More symmetry breaking -- ask for random pieces.
             # This would be the place to try fancier piece-requesting strategies
             # to avoid getting the same thing from multiple peers at a time.
-            for piece_id in random.sample(sorted(isect), n):
+            for piece_id in sorted(isect, key=lambda piece: needed_pieces.index(piece))[:n]:
                 # aha! The peer has this piece! Request it.
                 # which part of the piece do we need next?
                 # (must get the next-needed blocks in order)
@@ -80,6 +89,7 @@ class Dummy(Peer):
 
         In each round, this will be called after requests().
         """
+        m = 4
 
         round = history.current_round()
         logging.debug("%s again.  It's round %d." % (
@@ -94,12 +104,30 @@ class Dummy(Peer):
             chosen = []
             bws = []
         else:
-            logging.debug("Still here: uploading to a random peer")
-            # change my internal state for no reason
-            self.dummy_state["cake"] = "pie"
+            logging.debug("Still here: uploading to peers")
 
-            request = random.choice(requests)
-            chosen = [request.requester_id]
+            interested = list(np.unique([request.requester_id for request in requests]))
+
+            generosity = {peer.id : 0 for peer in peers}
+            hist = []
+            if round > 0:
+                hist += history.downloads[round-1]
+            if round > 1:
+                hist += history.downloads[round-2]
+            for download in hist:
+                if download.to_id == self.id:
+                    generosity[download.from_id] += download.blocks
+
+            chosen = sorted(interested, key = lambda peer: generosity[peer], reverse=True)[:m-1]
+
+            if round % 3 == 0:
+                unchosen = [peer for peer in interested if peer not in chosen]
+                if len(unchosen) > 0:
+                    chosen.append(random.choice(unchosen))
+                    self.optimistic = chosen[-1]
+            else:
+                chosen.append(self.optimistic)
+
             # Evenly "split" my upload bandwidth among the one chosen requester
             bws = even_split(self.up_bw, len(chosen))
 
