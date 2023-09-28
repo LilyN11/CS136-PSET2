@@ -35,6 +35,9 @@ class MillyStd(Peer):
         logging.debug("%s here: still need pieces %s" % (
             self.id, needed_pieces))
 
+        print("%s Pieces_I_have %s" % (
+            self.id, self.pieces))
+
         logging.debug("%s still here. Here are some peers:" % self.id)
         for p in peers:
             logging.debug("id: %s, available pieces: %s" % (p.id, p.available_pieces))
@@ -45,13 +48,13 @@ class MillyStd(Peer):
 
         requests = []   # We'll put all the things we want here
         # Symmetry breaking is good...
-        # random.shuffle(needed_pieces)
+        random.shuffle(needed_pieces)
         
         # Sort peers by id.  This is probably not a useful sort, but other 
         # sorts might be useful
         # peers.sort(key=lambda p: p.id)
         #ADDED count how many times each piece appears
-        count_pieces = {piece: 0 for piece in np_set}
+        count_pieces = {piece: 0 for piece in needed_pieces}
         for peer in peers:
             for piece in peer.available_pieces:
                 if piece in count_pieces:
@@ -71,7 +74,7 @@ class MillyStd(Peer):
                 start_block = self.pieces[piece_id]
                 r = Request(self.id, peer.id, piece_id, start_block)
                 requests.append(r)
-
+        print("%s Requestzz" % requests)
         return requests
 
     def uploads(self, requests, peers, history):
@@ -108,13 +111,16 @@ class MillyStd(Peer):
                 return 0
             return sum(self.download_rates[peer_id]) / len(self.download_rates[peer_id])
 
-        interested_peers = [r.requester_id for r in requests].sort(key=calc_download, reverse=True)[:3]
-        blocked_peers = [r.requester_id for r in requests if calc_download(r.requester_id) = 0]
+        interested_peers = [r.requester_id for r in requests].sort(key=calc_download, reverse=True)
+        if interested_peers:
+            interested_peers = [r.requester_id for r in requests].sort(key=calc_download, reverse=True)[:3]
+        blocked_peers = [r.requester_id for r in requests if calc_download(r.requester_id) == 0]
         
         if round % 3 == 0:
             if blocked_peers:
                 unblock_random = random.choice(blocked_peers)
-                interested_peers.append(unblock_random)
+                if interested_peers:
+                    interested_peers.append(unblock_random)
 
         if len(requests) == 0:
             logging.debug("No one wants my pieces!")
@@ -122,7 +128,7 @@ class MillyStd(Peer):
             bws = []
         else:
             #ADDED allocate bandwith among top requesters
-            bws = even_split(self.up_bw, len(4)) 
+            bws = even_split(self.up_bw, 4) 
         if bws is None:
             bws = []
         if interested_peers is None:
@@ -132,5 +138,5 @@ class MillyStd(Peer):
         # create actual uploads out of the list of requester ids and bandwidths
         uploads = [Upload(self.id, requester_id, bw)
                    for (requester_id, bw) in zip(interested_peers, bws)]
-        print(uploads)    
+        print("%s Uploadzz" % uploads)   
         return uploads

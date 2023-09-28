@@ -469,7 +469,7 @@ def main(args):
 
     if len(args) == 0:
         # default
-        agents_to_run = ['MillyStd', 'Dummy', 'Seed']
+        agents_to_run = ['Dummy', 'Dummy', 'Seed']
     else:
         try:
             agents_to_run = parse_agents(args)
