@@ -130,7 +130,7 @@ class MillyTyrant(Peer):
         # the previous round.
 
         if round == 0:
-            self.d = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/3. for p in peers}
+            self.d = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
             self.u = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
         else:
             we_unblocked = list(np.unique([upload.to_id for upload in history.uploads[history.last_round()]]))
