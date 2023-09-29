@@ -24,7 +24,8 @@ class MillyTourney(Peer):
         self.r = 3
         self.d = None
         self.u = None
-        self.uploaders = []
+        self.unblocked_us = []
+        self.we_unblocked = []
 
     def requests(self, peers, history):
         """
@@ -167,7 +168,7 @@ class MillyTourney(Peer):
             we_unblocked = list(np.unique([upload.to_id for upload in history.uploads[history.last_round()]]))
             unblocked_us = list(np.unique([download.from_id for download in history.downloads[history.last_round()]]))
 
-            self.uploaders.append(unblocked_us)
+            self.unblocked_us.append(unblocked_us)
             self.d = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
             self.u = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
             
@@ -179,12 +180,12 @@ class MillyTourney(Peer):
                 if peer.id in unblocked_us:
                     self.d[peer.id] = generosity[peer.id]
 
-                if peer.id in we_unblocked and peer.id not in unblocked_us:
+                if peer.id in self.we_unblocked[-2] and peer.id not in self.unblocked_us[-1]:
                     self.u[peer.id] = min(self.u[peer.id]*(1+self.alpha), self.up_bw)
                 elif round >= self.r:
                     unblocked = True
                     for i in range(self.r):
-                        if i < len(self.uploaders) and peer.id not in self.uploaders[-(i+1)]:
+                        if i < len(self.unblocked_us) and peer.id not in self.unblocked_us[-(i+1)]:
                             unblocked = False
                             break
                     if unblocked:

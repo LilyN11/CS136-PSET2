@@ -183,7 +183,8 @@ class MillyTyrant(Peer):
                     bws.append(int(self.u[id]))
 
             if sum(bws) > self.up_bw:
-                bws[-1] = self.up_bw - sum(bws[:-1])
+                chosen.pop()
+                bws.pop()
           
         # create actual uploads out of the list of peer ids and bandwidths
         uploads = [Upload(self.id, peer_id, bw)
