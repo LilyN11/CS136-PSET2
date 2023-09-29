@@ -118,69 +118,42 @@ class MillyPropshare(Peer):
         if not requests:
            return []
 
-        interested = list(set(request.requester_id for request in requests))
+        round = history.current_round()
+        logging.debug("%s again.  It's round %d." % (
+            self.id, round))
+        
+        if round == 0:
+            bws = even_split(self.up_bw, len(requests))
+            chosen = [request.requester_id for request in requests]
+            uploads = [Upload(self.id, peer_id, bw)
+                   for (peer_id, bw) in zip(chosen, bws)]
+        else:
+            interested = list(np.unique([request.requester_id for request in requests]))
+            generosity = {peer.id : 0 for peer in peers}
+            for download in history.downloads[-1]:
+                if download.to_id == self.id:
+                    generosity[download.from_id] += download.blocks
 
-        generosity = {peer.id : 0 for peer in peers}
-        for download in history.downloads[-1]:
-            if download.to_id == self.id:
-                generosity[download.from_id] += download.blocks
+            chosen = sorted([peer for peer in interested if generosity[peer] > 0], key=lambda peer: generosity[peer], reverse=True)
 
-        chosen = sorted([peer for peer in interested if generosity[peer] > 0], key=lambda peer: generosity[peer], reverse=True)[:m-1]
-
-        total_bw_avail = np.trunc(self.up_bw * ((m-1)/m))
-        total_download = sum(generosity[p] for p in chosen)
-        bw_allocation = {}
-        for c in chosen:
-            bw_allocation[c] = np.trunc((generosity[c] / total_download) * total_bw_avail) if total_download else 0
-
-        # Optimistic unchoke
-        unchosen = [peer for peer in interested if peer not in chosen]
-        optimistic_peer = random.choice(unchosen) if unchosen else None
-        if optimistic_peer:
-            chosen.append(optimistic_peer)
-            bw_allocation[optimistic_peer] = np.trunc(self.up_bw * (1/m))
-
-        bws = [bw_allocation[peer] for peer in chosen]
-        uploads = [Upload(self.id, peer_id, bw) for (peer_id, bw) in zip(chosen, bws)]
-        return uploads
-                    
-
+            total_bw_avail = (self.up_bw * ((m-1)/m))
+            total_download = sum(generosity[p] for p in chosen)
+            bw_allocation = {}
+            for c in chosen:
+                bw_allocation[c] = np.trunc((generosity[c] / total_download) * total_bw_avail) if total_download else 0
            
-
-        #     bw_allocation = {}
-        #     total_bw_avail = self.up_bw * ((m-1)/m)
-        #     total_download = sum([generosity[p] for p in chosen])
-        #     print("Apple")
-        #     print(total_download)
-        #     print(generosity)
-        #     for c in chosen:
-        #         print(c)
-        #         if total_download != 0:
-        #             bw_allocation[c] = np.round((generosity[c] / total_download) * total_bw_avail, 2)
-        #             print("%s Allocate" % bw_allocation )
+            # Optimistic unchoke
+            unchosen = [peer for peer in interested if peer not in chosen]
+            optimistic_peer = random.choice(unchosen) if unchosen else None
+            if optimistic_peer:
+                chosen.append(optimistic_peer)
+                bw_allocation[optimistic_peer] = np.trunc(self.up_bw * (1/m))
             
-        #     print("%s TESTING44" % bw_allocation )   
-        #     print(chosen) 
-        #     # Every round unchosen gets unchoked?
-        #     unchosen = [peer for peer in interested if peer not in chosen]
-        #     if unchosen:
-        #         optimistic_peer = random.choice(unchosen)
-        #         chosen.append(optimistic_peer)
-        #         bw_allocation[optimistic_peer] = np.round(self.up_bw * (1/m),0)
-        #     else:
-        #         if self.optimistic in interested:
-        #             chosen.append(self.optimistic)
-        #             bw_allocation[self.optimistic] = np.round(self.up_bw * (1/m),0)
-            
-        #     print("%s TESTING22" % bw_allocation )
-        #     bws = [bw_allocation[peer] for peer in chosen]
-
-        #     # Evenly "split" my upload bandwidth among the one chosen requester
-        #     # bws = even_split(self.up_bw, len(chosen))
-            
-
-        # # create actual uploads out of the list of peer ids and bandwidths
-        # uploads = [Upload(self.id, peer_id, bw)
-        #             for (peer_id, bw) in zip(chosen, bws)]
-            
-        # return uploads
+            bws = [bw_allocation[peer] for peer in chosen]
+            uploads = [Upload(self.id, peer_id, bw) for (peer_id, bw) in zip(chosen, bws)]
+            print("%s Requests" % interested) 
+            print("%s BWS allocation" % bw_allocation) 
+            print("%s Generosity" % generosity) 
+            print("%s Upload-dummy" % uploads) 
+        return uploads
+                        
