@@ -182,7 +182,7 @@ class MillyTourney(Peer):
             early_allocation -= 1
         else:
             bws, chosen = [], []
-            print("%sTesting21" % lucky)
+            print("%sTesting21")
             ratios = {p.id : self.d[p.id] / self.u[p.id] for p in peers}
             ranking = sorted(interested, key = lambda p : ratios[p], reverse=True)
 
