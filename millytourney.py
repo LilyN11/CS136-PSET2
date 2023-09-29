@@ -121,35 +121,60 @@ class MillyTourney(Peer):
 
         In each round, this will be called after requests().
         """
-        m = 10
-
-        if not requests:
-           return []
+        m = 5
 
         round = history.current_round()
+        interested = list(np.unique([request.requester_id for request in requests]))
         logging.debug("%s again.  It's round %d." % (
             self.id, round))
         
-        if round == 0:
+        if round > 0:
+            we_unblocked = list(np.unique([upload.to_id for upload in history.uploads[history.last_round()]]))
+            unblocked_us = list(np.unique([download.from_id for download in history.downloads[history.last_round()]]))
+
+            self.unblocked_us.append(unblocked_us)
+            self.we_unblocked.append(we_unblocked)
+
+            generosity = {peer.id : 0 for peer in peers}
+            for download in history.downloads[round-1]:
+                generosity[download.from_id] += download.blocks
+            
+            for peer in peers:
+                if peer.id in unblocked_us:
+                    self.d[peer.id] = generosity[peer.id]
+                if round >= 2:
+                    if peer.id in self.we_unblocked[-2] and peer.id not in self.unblocked_us[-1]:
+                        self.u[peer.id] = min(self.u[peer.id]*(1+self.alpha), self.up_bw)
+                if round >= self.r:
+                    unblocked = True
+                    for i in range(self.r):
+                        if i < len(self.unblocked_us) and peer.id not in self.unblocked_us[-(i+1)]:
+                            unblocked = False
+                            break
+                    if unblocked:
+                        self.u[peer.id] *= (1-self.gamma)
+        else:
+            self.d = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
+            self.u = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
+
+        if not requests:
+           return []
+        elif round == 0:
             bws = even_split(self.up_bw, len(requests))
             chosen = [request.requester_id for request in requests]
-            uploads = [Upload(self.id, peer_id, bw)
-                   for (peer_id, bw) in zip(chosen, bws)]
         elif round % 3:
-            interested = list(np.unique([request.requester_id for request in requests]))
-            generosity = {peer.id : 0 for peer in peers}
-            for download in history.downloads[-1]:
-                if download.to_id == self.id:
-                    generosity[download.from_id] += download.blocks
-
-            chosen = sorted([peer for peer in interested if generosity[peer] > 0], key=lambda peer: generosity[peer], reverse=True)
+            logging.debug("%s again.  It's round %d." % (
+                self.id, round))
+            
+            bws = []
+            chosen = []
 
             total_bw_avail = (self.up_bw * ((m-1)/m))
             total_download = sum(generosity[p] for p in chosen)
             bw_allocation = {}
             for c in chosen:
                 bw_allocation[c] = np.trunc((generosity[c] / total_download) * total_bw_avail) if total_download else 0
-           
+        
             # Optimistic unchoke
             unchosen = [peer for peer in interested if peer not in chosen]
             optimistic_peer = random.choice(unchosen) if unchosen else None
@@ -158,43 +183,8 @@ class MillyTourney(Peer):
                 bw_allocation[optimistic_peer] = np.trunc(self.up_bw * (1/m))
             
             bws = [bw_allocation[peer] for peer in chosen]
-            uploads = [Upload(self.id, peer_id, bw) for (peer_id, bw) in zip(chosen, bws)]
+            # uploads = [Upload(self.id, peer_id, bw) for (peer_id, bw) in zip(chosen, bws)]
         else:
-            num_peers = len(peers)
-
-            logging.debug("%s again.  It's round %d." % (
-                self.id, round))
-
-            we_unblocked = list(np.unique([upload.to_id for upload in history.uploads[history.last_round()]]))
-            unblocked_us = list(np.unique([download.from_id for download in history.downloads[history.last_round()]]))
-
-            self.unblocked_us.append(unblocked_us)
-            self.d = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
-            self.u = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
-            
-            generosity = {peer.id : 0 for peer in peers}
-            for download in history.downloads[round-1]:
-                generosity[download.from_id] += download.blocks
-
-            for peer in peers:
-                if peer.id in unblocked_us:
-                    self.d[peer.id] = generosity[peer.id]
-
-                if peer.id in self.we_unblocked[-2] and peer.id not in self.unblocked_us[-1]:
-                    self.u[peer.id] = min(self.u[peer.id]*(1+self.alpha), self.up_bw)
-                elif round >= self.r:
-                    unblocked = True
-                    for i in range(self.r):
-                        if i < len(self.unblocked_us) and peer.id not in self.unblocked_us[-(i+1)]:
-                            unblocked = False
-                            break
-                    if unblocked:
-                        self.u[peer.id] *= (1-self.gamma)
-
-       
-
-            interested = list(np.unique([request.requester_id for request in requests]))
-
             ratios = {peer_id: self.d[peer_id] / self.u[peer_id] for peer_id in interested}
 
             ranking = sorted(interested, key = lambda p : ratios[p], reverse=True)
@@ -209,9 +199,90 @@ class MillyTourney(Peer):
 
             if sum(bws) > self.up_bw:
                 bws[-1] = self.up_bw - sum(bws[:-1])
-          
-            # create actual uploads out of the list of peer ids and bandwidths
-            uploads = [Upload(self.id, peer_id, bw)
-                    for (peer_id, bw) in zip(chosen, bws)]
+        
+        uploads = [Upload(self.id, peer_id, bw)
+                   for (peer_id, bw) in zip(chosen, bws)]
         return uploads
+        # elif round % 3:
+        #     interested = list(np.unique([request.requester_id for request in requests]))
+        #     generosity = {peer.id : 0 for peer in peers}
+        #     for download in history.downloads[-1]:
+        #         if download.to_id == self.id:
+        #             generosity[download.from_id] += download.blocks
+
+        #     chosen = sorted([peer for peer in interested if generosity[peer] > 0], key=lambda peer: generosity[peer], reverse=True)
+
+        #     total_bw_avail = (self.up_bw * ((m-1)/m))
+        #     total_download = sum(generosity[p] for p in chosen)
+        #     bw_allocation = {}
+        #     for c in chosen:
+        #         bw_allocation[c] = np.trunc((generosity[c] / total_download) * total_bw_avail) if total_download else 0
+           
+        #     # Optimistic unchoke
+        #     unchosen = [peer for peer in interested if peer not in chosen]
+        #     optimistic_peer = random.choice(unchosen) if unchosen else None
+        #     if optimistic_peer:
+        #         chosen.append(optimistic_peer)
+        #         bw_allocation[optimistic_peer] = np.trunc(self.up_bw * (1/m))
+            
+        #     bws = [bw_allocation[peer] for peer in chosen]
+        #     uploads = [Upload(self.id, peer_id, bw) for (peer_id, bw) in zip(chosen, bws)]
+        # else:
+        #     num_peers = len(peers)
+
+        #     logging.debug("%s again.  It's round %d." % (
+        #         self.id, round))
+
+        #     we_unblocked = list(np.unique([upload.to_id for upload in history.uploads[history.last_round()]]))
+        #     unblocked_us = list(np.unique([download.from_id for download in history.downloads[history.last_round()]]))
+
+        #     self.unblocked_us.append(unblocked_us)
+        #     self.we_unblocked.append(we_unblocked)
+        #     self.d = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
+        #     self.u = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
+            
+        #     generosity = {peer.id : 0 for peer in peers}
+        #     for download in history.downloads[round-1]:
+        #         generosity[download.from_id] += download.blocks
+
+        #     for peer in peers:
+        #         if peer.id in unblocked_us:
+        #             self.d[peer.id] = generosity[peer.id]
+
+        #         if round >= 2:
+        #             if peer.id in self.we_unblocked[-2] and peer.id not in self.unblocked_us[-1]:
+        #                 self.u[peer.id] = min(self.u[peer.id]*(1+self.alpha), self.up_bw)
+        #         elif round >= self.r:
+        #             unblocked = True
+        #             for i in range(self.r):
+        #                 if i < len(self.unblocked_us) and peer.id not in self.unblocked_us[-(i+1)]:
+        #                     unblocked = False
+        #                     break
+        #             if unblocked:
+        #                 self.u[peer.id] *= (1-self.gamma)
+            
+
+       
+
+        #     interested = list(np.unique([request.requester_id for request in requests]))
+
+        #     ratios = {peer_id: self.d[peer_id] / self.u[peer_id] for peer_id in interested}
+
+        #     ranking = sorted(interested, key = lambda p : ratios[p], reverse=True)
+
+        #     bws = []
+        #     chosen = []
+
+        #     while sum(bws) < self.up_bw and len(ranking) > 0:
+        #         id = ranking.pop(0)
+        #         chosen.append(id)
+        #         bws.append(self.u[id])
+
+        #     if sum(bws) > self.up_bw:
+        #         bws[-1] = self.up_bw - sum(bws[:-1])
+          
+        #     # create actual uploads out of the list of peer ids and bandwidths
+        #     uploads = [Upload(self.id, peer_id, bw)
+        #             for (peer_id, bw) in zip(chosen, bws)]
+        # return uploads
                         
