@@ -121,6 +121,7 @@ class MillyTourney(Peer):
 
         In each round, this will be called after requests().
         """
+        ### THIS IS DONE
         m = 5
 
         round = history.current_round()
@@ -156,6 +157,8 @@ class MillyTourney(Peer):
         else:
             self.d = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
             self.u = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
+
+        ### BELOW IS WHEN decision-making starts
 
         if not requests:
            return []
