@@ -167,7 +167,7 @@ class MillyTourney(Peer):
 
         if len(requests) == 0:
             return []
-        elif early_allocation > 0:
+        elif round < early_allocation:
             logging.debug("early_allocation")
             if len(useful_peers) >= m:
                 chosen = random.choices(useful_peers, k=m)
@@ -182,26 +182,30 @@ class MillyTourney(Peer):
             early_allocation -= 1
         else:
             bws, chosen = [], []
-            
+            print("%sTesting21" % lucky)
             ratios = {p.id : self.d[p.id] / self.u[p.id] for p in peers}
             ranking = sorted(interested, key = lambda p : ratios[p], reverse=True)
 
-            bws_sum = .7 * self.up_bw
+            bws_sum = .8 * self.up_bw
             for i  in range(len(useful_peers)):
                 while sum(bws) < bws_sum:
                     chosen.append(useful_peers[i])
                     bws.append(self.u[useful_peers[i]])
             
-            if len(useless) > 0:
-                    lucky = random_shuffle([p for p in requests if p not in chosen])[6]
-                    self.optimistic = lucky[0]
+            if interested < 6:
+                lucky = random_choice([p for p in interested if p not in chosen], len(interested))
+            else:
+                lucky = random_choice([p for p in interested if p not in chosen], 6)
+            
+            print("%sLucky22" % lucky)
+            self.optimistic = lucky[0]
             
             for l in lucky:
                 if l not in chosen:
                     chosen.append(l)
 
             # Evenly "split" my upload bandwidth among the one chosen requester
-            lucky_bw = even_split(self.up_bw * .3, len(lucky))
+            lucky_bw = even_split(self.up_bw * .2, len(lucky))
             bws.append(lucky_bw)
 
             while sum(bws) < self.up_bw and len(ranking) > 0:
