@@ -192,20 +192,23 @@ class MillyTourney(Peer):
                     chosen.append(useful_peers[i])
                     bws.append(self.u[useful_peers[i]])
             
-            if interested < 6:
-                lucky = random_choice([p for p in interested if p not in chosen], len(interested))
+            if len(interested) < 6:
+                lucky = random.choices([p for p in interested if p not in chosen], k = (len(interested)- len(chosen)))
             else:
-                lucky = random_choice([p for p in interested if p not in chosen], 6)
+                lucky = random.choices([p for p in interested if p not in chosen], k = 6)
             
             print("%sLucky22" % lucky)
-            self.optimistic = lucky[0]
+            if len(lucky)> 0:
+                self.optimistic = lucky[0]
             
-            for l in lucky:
-                if l not in chosen:
-                    chosen.append(l)
+        
+            chosen.append(lucky)
 
             # Evenly "split" my upload bandwidth among the one chosen requester
-            lucky_bw = even_split(self.up_bw * .2, len(lucky))
+            remaining = (self.up_bw * .2)
+            print("%sRemain22" % remaining)
+            lucky_bw = even_split(remaining, len(lucky))
+            
             bws.append(lucky_bw)
 
             while sum(bws) < self.up_bw and len(ranking) > 0:
