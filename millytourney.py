@@ -18,9 +18,8 @@ class MillyTourney(Peer):
     def post_init(self):
         print(("post_init(): %s here!" % self.id))
         self.optimistic = "None"
-        self.optimistic = "None"
         self.alpha = 0.2
-        self.gamma = 0.1
+        self.gamma = 0.05
         self.r = 3
         self.d = None
         self.u = None
@@ -122,10 +121,14 @@ class MillyTourney(Peer):
         In each round, this will be called after requests().
         """
         ### THIS IS DONE
-        m = 5
+        m = 4
 
         round = history.current_round()
         interested = list(np.unique([request.requester_id for request in requests]))
+        random.shuffle(interested)
+        useful_peers = [p.id for p in peers if len(p.available_pieces) > 0 and p.id in interested]
+        useless_peers = [p for p in interested if p not in useful_peers]
+
         logging.debug("%s again.  It's round %d." % (
             self.id, round))
         
@@ -142,7 +145,7 @@ class MillyTourney(Peer):
             
             for peer in peers:
                 if peer.id in unblocked_us:
-                    self.d[peer.id] = generosity[peer.id]
+                    self.d[peer.id] = generosity[peer.id] * 0.3 + self.d[peer.id] * 0.7
                 if round >= 2:
                     if peer.id in self.we_unblocked[-2] and peer.id not in self.unblocked_us[-1]:
                         self.u[peer.id] = min(self.u[peer.id]*(1+self.alpha), self.up_bw)
@@ -155,45 +158,48 @@ class MillyTourney(Peer):
                     if unblocked:
                         self.u[peer.id] *= (1-self.gamma)
         else:
-            self.d = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
-            self.u = {p.id : random.uniform(self.conf.min_up_bw, self.conf.max_up_bw)/4. for p in peers}
+            self.d = {p.id : self.conf.min_up_bw/(m+2) for p in peers}
+            avg = (self.conf.min_up_bw + self.conf.max_up_bw)/2
+            self.u = {p.id : random.uniform(avg / (m-0.1), self.conf.max_up_bw / (m-0.1)) for p in peers}
 
         ### BELOW IS WHEN decision-making starts
+        early_allocation = 2
 
-        if not requests:
-           return []
-        elif round == 0:
-            bws = even_split(self.up_bw, len(requests))
-            chosen = [request.requester_id for request in requests]
-        elif round % 3:
-            logging.debug("%s again.  It's round %d." % (
-                self.id, round))
-            
-            bws = []
-            chosen = []
-
-            total_bw_avail = (self.up_bw * ((m-1)/m))
-            total_download = sum(generosity[p] for p in chosen)
-            bw_allocation = {}
-            for c in chosen:
-                bw_allocation[c] = np.trunc((generosity[c] / total_download) * total_bw_avail) if total_download else 0
-        
-            # Optimistic unchoke
-            unchosen = [peer for peer in interested if peer not in chosen]
-            optimistic_peer = random.choice(unchosen) if unchosen else None
-            if optimistic_peer:
-                chosen.append(optimistic_peer)
-                bw_allocation[optimistic_peer] = np.trunc(self.up_bw * (1/m))
-            
-            bws = [bw_allocation[peer] for peer in chosen]
-            # uploads = [Upload(self.id, peer_id, bw) for (peer_id, bw) in zip(chosen, bws)]
+        if len(requests) == 0:
+            return []
+        elif early_allocation > 0:
+            logging.debug("early_allocation")
+            if len(useful_peers) >= m:
+                chosen = random.choices(useful_peers, k=m)
+            elif len(interested) < m:
+                chosen = interested
+            else:
+                chosen = useful_peers
+                chosen += random.choices(useless_peers, k=(m - len(useful_peers)))
+            bws = even_split(self.up_bw, len(chosen))
+            self.optimistic = chosen[0]
+            self.u[self.optimistic] = bws[0]
+            early_allocation -= 1
         else:
-            ratios = {peer_id: self.d[peer_id] / self.u[peer_id] for peer_id in interested}
-
+            bws, chosen = [], []
+            
+            ratios = {p.id : self.d[p.id] / self.u[p.id] for p in peers}
             ranking = sorted(interested, key = lambda p : ratios[p], reverse=True)
 
-            bws = []
-            chosen = []
+            # bws, chosen = [], []
+            if round % 3:
+                if len(useful_peers) > 0:
+                    chosen.append(random.choice(useful_peers))
+                else:
+                    chosen.append(random.choice(interested))
+                self.optimistic = chosen[0]
+                bws.append(max(int(self.up_bw / m), self.u[self.optimistic]))
+            else:
+                chosen.append(self.optimistic)
+                bws.append(max(int(self.up_bw / m), self.u[self.optimistic]))
+            
+            self.u[self.optimistic] = bws[0]
+            ranking.remove(chosen[0])
 
             while sum(bws) < self.up_bw and len(ranking) > 0:
                 id = ranking.pop(0)
@@ -204,8 +210,55 @@ class MillyTourney(Peer):
                 bws[-1] = self.up_bw - sum(bws[:-1])
         
         uploads = [Upload(self.id, peer_id, bw)
-                   for (peer_id, bw) in zip(chosen, bws)]
+                for (peer_id, bw) in zip(chosen, bws)]
         return uploads
+        
+        
+        
+        
+        
+        
+        # elif round % 3:
+        #     logging.debug("%s again.  It's round %d." % (
+        #         self.id, round))
+            
+        #     bws = []
+        #     chosen = []
+
+        #     total_bw_avail = (self.up_bw * ((m-1)/m))
+        #     total_download = sum(generosity[p] for p in chosen)
+        #     bw_allocation = {}
+        #     for c in chosen:
+        #         bw_allocation[c] = np.trunc((generosity[c] / total_download) * total_bw_avail) if total_download else 0
+        
+        #     # Optimistic unchoke
+        #     unchosen = [peer for peer in interested if peer not in chosen]
+        #     optimistic_peer = random.choice(unchosen) if unchosen else None
+        #     if optimistic_peer:
+        #         chosen.append(optimistic_peer)
+        #         bw_allocation[optimistic_peer] = np.trunc(self.up_bw * (1/m))
+            
+        #     bws = [bw_allocation[peer] for peer in chosen]
+        #     # uploads = [Upload(self.id, peer_id, bw) for (peer_id, bw) in zip(chosen, bws)]
+        # else:
+        #     ratios = {peer_id: self.d[peer_id] / self.u[peer_id] for peer_id in interested}
+
+        #     ranking = sorted(interested, key = lambda p : ratios[p], reverse=True)
+
+        #     bws = []
+        #     chosen = []
+
+        #     while sum(bws) < self.up_bw and len(ranking) > 0:
+        #         id = ranking.pop(0)
+        #         chosen.append(id)
+        #         bws.append(self.u[id])
+
+        #     if sum(bws) > self.up_bw:
+        #         bws[-1] = self.up_bw - sum(bws[:-1])
+        
+        # uploads = [Upload(self.id, peer_id, bw)
+        #            for (peer_id, bw) in zip(chosen, bws)]
+        # return uploads
         # elif round % 3:
         #     interested = list(np.unique([request.requester_id for request in requests]))
         #     generosity = {peer.id : 0 for peer in peers}
