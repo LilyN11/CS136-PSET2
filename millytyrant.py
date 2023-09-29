@@ -105,6 +105,7 @@ class MillyTyrant(Peer):
                 requests.append(r)
 
                 needed_pieces.remove(piece_id)
+
                 needed_pieces.append(piece_id)
 
         return requests
@@ -166,7 +167,7 @@ class MillyTyrant(Peer):
 
             interested = list(np.unique([request.requester_id for request in requests]))
 
-            ratios = {p.id : self.d[p.id] / self.u[p.id] for p in peers}
+            ratios = {peer_id: self.d[peer_id] / self.u[peer_id] for peer_id in interested}
 
             ranking = sorted(interested, key = lambda p : ratios[p], reverse=True)
 
@@ -178,32 +179,9 @@ class MillyTyrant(Peer):
                 chosen.append(id)
                 bws.append(self.u[id])
 
-            if len(chosen) > 0:
-                chosen.pop()
-                bws.pop()
-            # generosity = {peer.id : 0 for peer in peers}
-            # hist = []
-            # if round > 0:
-            #     hist += history.downloads[round-1]
-            # if round > 1:
-            #     hist += history.downloads[round-2]
-            # for download in hist:
-            #     if download.to_id == self.id:
-            #         generosity[download.from_id] += download.blocks
-
-            # chosen = sorted(interested, key = lambda peer: generosity[peer], reverse=True)[:m-1]
-
-            # if round % 3 == 0:
-            #     unchosen = [peer for peer in interested if peer not in chosen]
-            #     if len(unchosen) > 0:
-            #         chosen.append(random.choice(unchosen))
-            #         self.optimistic = chosen[-1]
-            # else:
-            #     chosen.append(self.optimistic)
-
-            # Evenly "split" my upload bandwidth among the one chosen requester
-            # bws = even_split(self.up_bw, len(chosen))
-
+            if sum(bws) > self.up_bw:
+                bws[-1] = self.up_bw - sum(bws[:-1])
+          
         # create actual uploads out of the list of peer ids and bandwidths
         uploads = [Upload(self.id, peer_id, bw)
                    for (peer_id, bw) in zip(chosen, bws)]
