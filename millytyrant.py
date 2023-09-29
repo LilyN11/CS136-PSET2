@@ -69,6 +69,8 @@ class MillyTyrant(Peer):
         else:
             unblocked = list(np.unique([upload.to_id for upload in history.uploads[history.last_round()]]))
 
+        random.shuffle(peers)
+
         def rank(p):
             if p.id in unblocked:
                 return self.conf.num_pieces + len(p.available_pieces)
@@ -121,7 +123,7 @@ class MillyTyrant(Peer):
         In each round, this will be called after requests().
         """
         round = history.current_round()
-        num_peers = len(peers)
+        num_peers = len(peers) 
 
         logging.debug("%s again.  It's round %d." % (
             self.id, round))
@@ -167,17 +169,18 @@ class MillyTyrant(Peer):
 
             interested = list(np.unique([request.requester_id for request in requests]))
 
-            ratios = {peer_id: self.d[peer_id] / self.u[peer_id] for peer_id in interested}
-
+            ratios = {p.id : self.d[p.id] / self.u[p.id] for p in peers}
+            
             ranking = sorted(interested, key = lambda p : ratios[p], reverse=True)
 
             bws = []
             chosen = []
 
-            while sum(bws) < self.up_bw and len(ranking) > 0:
+            while sum(bws) <= self.up_bw and len(ranking) > 0:
                 id = ranking.pop(0)
-                chosen.append(id)
-                bws.append(self.u[id])
+                if id in interested:
+                    chosen.append(id)
+                    bws.append(int(self.u[id]))
 
             if sum(bws) > self.up_bw:
                 bws[-1] = self.up_bw - sum(bws[:-1])
